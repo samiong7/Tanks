@@ -23,31 +23,34 @@ jobs:
     - name: Compile Tanks.exe with GCC
       shell: msys2 {0}
       run: |
-        # جمع كافة مسارات ملفات الهيدر والـ cpp
         INCLUDES=$(find src -type d | sed 's/^/-I/')
         SOURCES=$(find src -name "*.cpp")
         
-        # بناء ملف Tanks.exe مباشرة بنفس مترجم المطور الأصلي
+        # بناء اللعبة بدون -mwindows مؤقتاً أو مع ربط كافة المكتبات
         g++ -std=c++17 -O2 -fpermissive $INCLUDES $SOURCES -o Tanks.exe \
-          -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer -mwindows
+          -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
 
-    - name: Package Game & DLLs
+    - name: Package Game, Assets & All Plugin DLLs
       shell: msys2 {0}
       run: |
         mkdir -p Game_Release
         cp Tanks.exe Game_Release/
         
-        # نسخ كافة ملفات الـ DLL المطلوبة لتعمل اللعبة على أي ويندوز
-        ldd Tanks.exe | grep '/mingw64/bin/' | awk '{print $3}' | xargs -I {} cp {} Game_Release/
+        # نسخ كافة ملفات الـ DLL الأساسية والفرعية (مثل libpng و freetype و zlib)
+        for bin in Tanks.exe /mingw64/bin/SDL2*.dll; do
+          ldd "$bin" | grep '/mingw64/bin/' | awk '{print $3}' | xargs -I {} cp -u {} Game_Release/
+        done
+        cp /mingw64/bin/libpng*.dll /mingw64/bin/zlib*.dll /mingw64/bin/libfreetype*.dll /mingw64/bin/libjpeg*.dll /mingw64/bin/libwebp*.dll /mingw64/bin/libbz2*.dll /mingw64/bin/libharfbuzz*.dll /mingw64/bin/libglib*.dll /mingw64/bin/libintl*.dll /mingw64/bin/libiconv*.dll /mingw64/bin/libpcre*.dll /mingw64/bin/libgraphite2*.dll /mingw64/bin/libbrotli*.dll Game_Release/ 2>/dev/null || true
         
-        # نسخ مجلدات الصور والخرائط والخطوط الخاصة باللعبة
+        # نسخ كافة مجلدات وملفات اللعبة (levels, texture.png, prstartk.ttf) أينما كانت
+        cp -r levels Game_Release/ 2>/dev/null || true
+        find . -maxdepth 3 \( -name "*.png" -o -name "*.ttf" -o -name "*.wav" -o -name "*.ogg" \) -exec cp {} Game_Release/ \;
         for dir in */; do
           dirname="${dir%/}"
           if [[ "$dirname" != "Game_Release" && "$dirname" != "src" && "$dirname" != ".git" && "$dirname" != ".github" ]]; then
             cp -r "$dirname" Game_Release/
           fi
         done
-        cp *.png *.ttf *.txt Game_Release/ 2>/dev/null || true
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
