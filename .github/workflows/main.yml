@@ -8,81 +8,46 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install SDL2 via vcpkg
+    - name: Setup MSYS2 MinGW-w64 & SDL2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-SDL2
+          mingw-w64-x86_64-SDL2_image
+          mingw-w64-x86_64-SDL2_ttf
+          mingw-w64-x86_64-SDL2_mixer
+
+    - name: Compile Tanks.exe with GCC
+      shell: msys2 {0}
       run: |
-        vcpkg install sdl2:x64-windows sdl2-image:x64-windows sdl2-ttf:x64-windows sdl2-mixer:x64-windows
+        # جمع كافة مسارات ملفات الهيدر والـ cpp
+        INCLUDES=$(find src -type d | sed 's/^/-I/')
+        SOURCES=$(find src -name "*.cpp")
+        
+        # بناء ملف Tanks.exe مباشرة بنفس مترجم المطور الأصلي
+        g++ -std=c++17 -O2 -fpermissive $INCLUDES $SOURCES -o Tanks.exe \
+          -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer -mwindows
 
-    - name: Fix C++ Narrowing Conversion & Generate CMakeLists.txt
-      shell: pwsh
+    - name: Package Game & DLLs
+      shell: msys2 {0}
       run: |
-        # إصلاح السطر 161 بالكامل في ملف tank.cpp لتحويل القيمتين من double إلى int
-        if (Test-Path "src/objects/tank/tank.cpp") {
-            $lines = Get-Content "src/objects/tank/tank.cpp"
-            for ($i = 0; $i -lt $lines.Count; $i++) {
-                if ($lines[$i] -match '\{([^,{}]+),\s*([^,{}]+),\s*([^,{}]+),\s*([^,{}]+)\}') {
-                    $lines[$i] = $lines[$i] -replace '\{([^,{}]+),\s*([^,{}]+),\s*([^,{}]+),\s*([^,{}]+)\}', '{(int)($1), (int)($2), (int)($3), (int)($4)}'
-                }
-                elseif ($lines[$i] -match '\{([^,{}]+),\s*([^,{}]+)\}') {
-                    $lines[$i] = $lines[$i] -replace '\{([^,{}]+),\s*([^,{}]+)\}', '{(int)($1), (int)($2)}'
-                }
-            }
-            Set-Content "src/objects/tank/tank.cpp" -Value $lines
-        }
-
-        @'
-        cmake_minimum_required(VERSION 3.10)
-        project(Tanks)
-        set(CMAKE_CXX_STANDARD 17)
-        set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-        if(MSVC)
-            add_compile_options(/std:c++17 /permissive /W0 /wd4244 /wd4838)
-            add_compile_definitions(_CRT_SECURE_NO_WARNINGS SDL_MAIN_HANDLED)
-        endif()
-
-        find_package(SDL2 CONFIG REQUIRED)
-        find_package(SDL2_image CONFIG REQUIRED)
-        find_package(SDL2_ttf CONFIG REQUIRED)
-        find_package(SDL2_mixer CONFIG REQUIRED)
-
-        file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c")
-        if(NOT SOURCES)
-            file(GLOB_RECURSE SOURCES "*.cpp" "*.c")
-            list(FILTER SOURCES EXCLUDE REGEX "CMakeFiles")
-        endif()
-
-        file(GLOB_RECURSE HEADERS "*.h" "*.hpp")
-        foreach(HEADER ${HEADERS})
-            get_filename_component(DIR ${HEADER} DIRECTORY)
-            include_directories(${DIR})
-        endforeach()
-
-        add_executable(Tanks ${SOURCES})
-
-        target_link_libraries(Tanks PRIVATE
-            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-            $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
-            $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
-            $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
-        )
-        '@ | Out-File -FilePath CMakeLists.txt -Encoding utf8
-
-    - name: Configure CMake
-      run: |
-        cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -A x64
-
-    - name: Build EXE
-      run: |
-        cmake --build build --config Release -- /p:CL_MPCount=4 /p:WarningLevel=0
-
-    - name: Package Game
-      shell: pwsh
-      run: |
-        New-Item -ItemType Directory -Force -Path Game_Release
-        Copy-Item "build/Release/*.exe" -Destination "Game_Release/"
-        Copy-Item "build/Release/*.dll" -Destination "Game_Release/" -ErrorAction SilentlyContinue
-        Get-ChildItem -Directory | Where-Object { $_.Name -notin @('build', 'Game_Release', 'src', '.git', '.github') } | Copy-Item -Destination "Game_Release/" -Recurse -Force
+        mkdir -p Game_Release
+        cp Tanks.exe Game_Release/
+        
+        # نسخ كافة ملفات الـ DLL المطلوبة لتعمل اللعبة على أي ويندوز
+        ldd Tanks.exe | grep '/mingw64/bin/' | awk '{print $3}' | xargs -I {} cp {} Game_Release/
+        
+        # نسخ مجلدات الصور والخرائط والخطوط الخاصة باللعبة
+        for dir in */; do
+          dirname="${dir%/}"
+          if [[ "$dirname" != "Game_Release" && "$dirname" != "src" && "$dirname" != ".git" && "$dirname" != ".github" ]]; then
+            cp -r "$dirname" Game_Release/
+          fi
+        done
+        cp *.png *.ttf *.txt Game_Release/ 2>/dev/null || true
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
