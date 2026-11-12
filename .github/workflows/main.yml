@@ -12,6 +12,42 @@ jobs:
       run: |
         vcpkg install sdl2:x64-windows sdl2-image:x64-windows sdl2-ttf:x64-windows sdl2-mixer:x64-windows
 
+    - name: Generate CMakeLists.txt automatically
+      shell: pwsh
+      run: |
+        @'
+        cmake_minimum_required(VERSION 3.10)
+        project(Tanks)
+        set(CMAKE_CXX_STANDARD 14)
+
+        find_package(SDL2 CONFIG REQUIRED)
+        find_package(SDL2_image CONFIG REQUIRED)
+        find_package(SDL2_ttf CONFIG REQUIRED)
+        find_package(SDL2_mixer CONFIG REQUIRED)
+
+        file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.c")
+        if(NOT SOURCES)
+            file(GLOB_RECURSE SOURCES "*.cpp" "*.c")
+            list(FILTER SOURCES EXCLUDE REGEX "CMakeFiles")
+        endif()
+
+        file(GLOB_RECURSE HEADERS "*.h" "*.hpp")
+        foreach(HEADER ${HEADERS})
+            get_filename_component(DIR ${HEADER} DIRECTORY)
+            include_directories(${DIR})
+        endforeach()
+
+        add_executable(Tanks WIN32 ${SOURCES})
+
+        target_link_libraries(Tanks PRIVATE
+            $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+            $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+            $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
+            $<IF:$<TARGET_EXISTS:SDL2_ttf::SDL2_ttf>,SDL2_ttf::SDL2_ttf,SDL2_ttf::SDL2_ttf-static>
+            $<IF:$<TARGET_EXISTS:SDL2_mixer::SDL2_mixer>,SDL2_mixer::SDL2_mixer,SDL2_mixer::SDL2_mixer-static>
+        )
+        '@ | Out-File -FilePath CMakeLists.txt -Encoding utf8
+
     - name: Configure CMake
       run: |
         cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -A x64
@@ -21,11 +57,12 @@ jobs:
         cmake --build build --config Release
 
     - name: Package Game
+      shell: pwsh
       run: |
-        mkdir Game_Release
-        cp build/Release/*.exe Game_Release/
-        cp build/Release/*.dll Game_Release/
-        cp -r data Game_Release/ 2>$null || cp -r res Game_Release/ 2>$null || true
+        New-Item -ItemType Directory -Force -Path Game_Release
+        Copy-Item "build/Release/*.exe" -Destination "Game_Release/"
+        Copy-Item "build/Release/*.dll" -Destination "Game_Release/" -ErrorAction SilentlyContinue
+        Get-ChildItem -Directory | Where-Object { $_.Name -notin @('build', 'Game_Release', 'src', '.git', '.github') } | Copy-Item -Destination "Game_Release/" -Recurse -Force
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
