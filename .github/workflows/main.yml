@@ -15,11 +15,18 @@ jobs:
     - name: Fix C++ Narrowing Conversion & Generate CMakeLists.txt
       shell: pwsh
       run: |
-        # إصلاح خطأ السطر 161 في ملف tank.cpp الخاص بتحويل double إلى int
+        # إصلاح السطر 161 بالكامل في ملف tank.cpp لتحويل القيمتين من double إلى int
         if (Test-Path "src/objects/tank/tank.cpp") {
-            $content = Get-Content "src/objects/tank/tank.cpp" -Raw
-            $content = $content -replace '\{pos_x,', '{(int)pos_x,' -replace '\{destRect\.x,', '{(int)destRect.x,'
-            Set-Content "src/objects/tank/tank.cpp" -Value $content
+            $lines = Get-Content "src/objects/tank/tank.cpp"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -match '\{([^,{}]+),\s*([^,{}]+),\s*([^,{}]+),\s*([^,{}]+)\}') {
+                    $lines[$i] = $lines[$i] -replace '\{([^,{}]+),\s*([^,{}]+),\s*([^,{}]+),\s*([^,{}]+)\}', '{(int)($1), (int)($2), (int)($3), (int)($4)}'
+                }
+                elseif ($lines[$i] -match '\{([^,{}]+),\s*([^,{}]+)\}') {
+                    $lines[$i] = $lines[$i] -replace '\{([^,{}]+),\s*([^,{}]+)\}', '{(int)($1), (int)($2)}'
+                }
+            }
+            Set-Content "src/objects/tank/tank.cpp" -Value $lines
         }
 
         @'
