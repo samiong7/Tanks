@@ -13,7 +13,7 @@ using namespace std;
 #define P1_FIRE_KEY KeyCode::KEY_RALT
 #define P2_FIRE_KEY KeyCode::KEY_LALT
 #else
-#define P1_FIRE_KEY KeyCode::KEY_RCTRL
+#define P1_FIRE_KEY KeyCode::KEY_RALT
 #define P2_FIRE_KEY KeyCode::KEY_LCTRL
 #endif
 
